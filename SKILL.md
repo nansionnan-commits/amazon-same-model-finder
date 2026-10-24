@@ -77,9 +77,51 @@ GET /catalog/2022-04-01/items/{asin}?includedData=summaries,attributes,productTy
 
 **验证关键词相关性**：搜出来前 5 个里如果有 ≥2 个同款结构 → 词对。
 
-### ③ 前台搜索（**两条通道，优先 bsk**）
+### ③ 前台搜索（**四条通道，按场景选**）
 
-#### 通道 A：bsk（真实浏览器，推荐）
+#### 🥇 通道 D：以图搜图（**找同款最快，强烈推荐**）
+
+**直接拿产品主图搜，不用提关键词，视觉相似度排序。**
+
+```json
+{"toolName": "amazon/searchByImage",
+ "arguments": {
+   "imageUrl": "<产品主图URL>",
+   "amazonDomain": "amazon.com",
+   "deliveryZip": "10001",
+   "sort": "default"
+ }}
+```
+
+**⚠️ toolName 不能加前导斜杠**：是 `amazon/searchByImage`，**不是** `/amazon/searchByImage`（加了会报 4001 图片加载失败，这个坑踩过）
+
+**参数**：
+| 参数 | 必填 | 说明 |
+|---|---|---|
+| `imageUrl` | ✅ | 产品图 URL（必须公网可访问）|
+| `amazonDomain` | ✅ | 支持 US/UK/DE/FR/IT/ES/JP/IN |
+| `deliveryZip` | 否 | 默认 10001 |
+| `sort` | 否 | `default` / `price-asc-rank` / `price-desc-rank` / `rating-*-rank` / `ratings-*-rank` |
+| `aggregateByKeepaData` | 否 | `true` 时聚合 Keepa（能拿月销量/BSR），**默认 false** |
+
+**返回字段**：`asin` / `title` / `imageUrl` / `price` / `brand` / `rating` / `ratings` / `variationNum` / `asinUrl`
+
+**实测效果（土豆保鲜袋 B0HP1CS63Z）**：
+- **63 个结果**，前 20 个几乎全是同款
+- **第 1 名就是关键词搜索里找到的 YAMIELO B0HGQXFNR9 $19.99**
+- 挖出大量关键词搜不到的同款（Generic 品牌 $3.99~$35.99）
+
+**优势 vs 关键词搜索**：
+| | 以图搜图 | 关键词搜索 |
+|---|---|---|
+| 需要提关键词 | ❌ 不用 | ✅ 要提 |
+| 同款命中率 | **高**（视觉相似）| 中（看词准不准）|
+| 尾部噪声 | 有（文件袋/手表带这种无关项）| 少 |
+| 适合 | **已知一个同款，想找全部** | 探索市场 |
+
+**⚠️ 尾部噪声**：结果靠后的部分会出现完全不相关的商品（实测第 37 名开始出现文件袋、手表带）。**判同款时照样要走 5 维度，不能因为是图搜结果就默认是同款。**
+
+#### 通道 A：bsk（真实浏览器，关键词搜索）
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
@@ -88,8 +130,6 @@ python <amazon-serp-ads>/scripts/bsk_serp.py --keyword "<核心词>" --rounds 3 
 ```
 
 **优势**：用老板真实登录的 Chrome，反爬完全正常，**首轮就能抓到 12 个广告**，价格自动美元。
-
-**前置**：`bsk browsers` 要能看到 chrome；daemon 要常驻。
 
 #### 通道 B：curl（兜底）
 
@@ -107,14 +147,17 @@ python <amazon-serp-ads>/scripts/amz_serp_ads.py --keyword "<核心词>" --round
 **只能补这些**：`monthlySalesUnits` / `bsr` / `badgeEbc` / `badgeVideo` / `listingQualityScore`
 **不能当搜索用**（排序和前台完全不同，实测第 1 名差得远）
 
-### 🔴 三条通道选型
+### 🔴 四条通道选型
 
-| 要什么 | 用哪条 |
+| 场景 | 用哪条 |
 |---|---|
-| **搜索结果 + 广告位 + 真实价格** | **bsk**（首选）|
-| 同款候选的**销量/BSR/A+/视频** | **sellersprite**（补充）|
-| bsk 不可用时兜底 | curl |
+| **已知一个同款，要找全部同款** | **🥇 以图搜图** |
+| 探索市场 / 看排名 / 看广告位 | **bsk**（首选）|
+| 补同款候选的销量/BSR/A+/视频 | **sellersprite** |
+| bsk 不可用 | curl |
 | 需要登录态（卖家后台）| bsk |
+
+**最佳组合**：**以图搜图找同款 → sellersprite 补销量 → bsk 看广告位**
 
 **⚠️ 绝对不能只用 sellersprite 当搜索**——它是数据库快照，排序和真实 SERP 完全不同。
 
