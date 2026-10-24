@@ -77,19 +77,56 @@ GET /catalog/2022-04-01/items/{asin}?includedData=summaries,attributes,productTy
 
 **验证关键词相关性**：搜出来前 5 个里如果有 ≥2 个同款结构 → 词对。
 
-### ③ 前台搜索（**必须用 amazon/search，不是 sellersprite**）
+### ③ 前台搜索（**两条通道，优先 bsk**）
+
+#### 通道 A：bsk（真实浏览器，推荐）
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+export BSK_AUTO_START=0
+python <amazon-serp-ads>/scripts/bsk_serp.py --keyword "<核心词>" --rounds 3 --out result.json
+```
+
+**优势**：用老板真实登录的 Chrome，反爬完全正常，**首轮就能抓到 12 个广告**，价格自动美元。
+
+**前置**：`bsk browsers` 要能看到 chrome；daemon 要常驻。
+
+#### 通道 B：curl（兜底）
+
+```bash
+python <amazon-serp-ads>/scripts/amz_serp_ads.py --keyword "<核心词>" --rounds 3 --gap 6
+```
+
+#### 通道 C：sellersprite（补充销量/BSR/A+/视频）
 
 ```json
-{"toolName": "amazon/search",
- "arguments": {
-   "keyword": "<核心词>",
-   "amazonDomain": "amazon.com",
-   "deliveryZip": "10001",
-   "device": "desktop",
-   "language": "en_US",
-   "page": 1,
-   "sort": "relevanceblender"
- }}
+{"toolName": "sellersprite/productSearch",
+ "arguments": {"keyword": "<核心词>", "marketplace": "US", "size": 20}}
+```
+
+**只能补这些**：`monthlySalesUnits` / `bsr` / `badgeEbc` / `badgeVideo` / `listingQualityScore`
+**不能当搜索用**（排序和前台完全不同，实测第 1 名差得远）
+
+### 🔴 三条通道选型
+
+| 要什么 | 用哪条 |
+|---|---|
+| **搜索结果 + 广告位 + 真实价格** | **bsk**（首选）|
+| 同款候选的**销量/BSR/A+/视频** | **sellersprite**（补充）|
+| bsk 不可用时兜底 | curl |
+| 需要登录态（卖家后台）| bsk |
+
+**⚠️ 绝对不能只用 sellersprite 当搜索**——它是数据库快照，排序和真实 SERP 完全不同。
+
+### 搜索参数
+
+```json
+{"keyword": "<核心词>",
+ "amazonDomain": "amazon.com",
+ "deliveryZip": "10001",
+ "device": "desktop",
+ "language": "en_US",
+ "sort": "relevanceblender"}   // = Featured（老板说的 features）
 ```
 
 **返回字段**（真实前台数据）：
@@ -101,12 +138,10 @@ GET /catalog/2022-04-01/items/{asin}?includedData=summaries,attributes,productTy
 | `delivery` | **配送信息（含运费和到达时间）** |
 | `fulfillment` | 配送方式（AMZ/FBA/FBM）|
 | `rating` / `ratings` | 评分 / 评分数 |
-| `monthlySalesUnits` | 月销量（sellersprite 补充）|
-| `sponsored` | **是否广告位** |
+| `sponsored` | **是否广告位**（curl 通道可能抓不全，bsk 更准）|
 | `badges` | Overall Pick / Amazon's Choice 等标 |
 | `offers` | 促销信息（Save X% on 2）|
 | `availableDate` | 上架时间 |
-| `dimension` / `weight` | 尺寸 / 重量 |
 
 ### ④ 逐个看主图，判断同款
 
